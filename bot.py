@@ -51,7 +51,7 @@ def get_game_keyboard(options):
     """Создание клавиатуры для выбора ответа с добавлением кнопки 'Главное меню'"""
     keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     keyboard.add(*[types.KeyboardButton(str(option)) for option in options])
-    keyboard.add(types.KeyboardButton('/start'))
+    keyboard.add(types.KeyboardButton('Главное меню'))
     return keyboard
 
 @bot.message_handler(commands=['start'])
@@ -63,7 +63,7 @@ def send_welcome(message):
         "current_streak": 0,
         "difficulty": 1
     }
-    bot.reply_to(message, f"Привет, {message.from_user.first_name}! Давай поиграем в таблицу умножения!", reply_markup=get_main_keyboard())
+    bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}! Давай поиграем в таблицу умножения!", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == 'Играть')
 def play_game(message):
@@ -75,6 +75,10 @@ def play_game(message):
 
 def check_answer(message, correct_answer):
     """Проверка ответа пользователя и обновление статистики"""
+    if message.text == 'Главное меню':
+        send_welcome(message)
+        return
+
     user = user_data[message.chat.id]
     try:
         if int(message.text) == correct_answer:
@@ -109,5 +113,10 @@ def reset_stats(message):
         "difficulty": 1
     }
     bot.send_message(message.chat.id, "Твоя статистика была сброшена.", reply_markup=get_main_keyboard())
+
+@bot.message_handler(func=lambda message: message.text == 'Главное меню')
+def go_to_main_menu(message):
+    """Возвращение в главное меню"""
+    send_welcome(message)
 
 bot.polling()
