@@ -3,6 +3,7 @@ from telebot import types
 import random
 import os
 
+# Получение токена из переменных окружения
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
@@ -28,6 +29,7 @@ praise_stickers = [
 ]
 
 def generate_question(difficulty=1):
+    """Генерация вопроса и вариантов ответов на основе выбранной сложности"""
     a = random.randint(2, 9 * difficulty)
     b = random.randint(2, 9 * difficulty)
     correct_answer = a * b
@@ -40,45 +42,80 @@ def generate_question(difficulty=1):
     return f"{a} × {b}", correct_answer, options
 
 def get_main_keyboard():
+    """Создание основной клавиатуры"""
     keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     keyboard.add(types.KeyboardButton('Играть'), types.KeyboardButton('Статистика'))
     return keyboard
 
+def get_difficulty_keyboard():
+    """Создание клавиатуры для выбора уровня сложности"""
+    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    keyboard.add(
+        types.KeyboardButton('Легкий'),
+        types.KeyboardButton('Средний'),
+        types.KeyboardButton('Сложный')
+    )
+    return keyboard
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    """Приветствие нового пользователя"""
     user_data[message.chat.id] = {
         "score": 0,
         "max_score": 0,
-        "current_streak": 0
+        "current_streak": 0,
+        "difficulty": 1
     }
     bot.reply_to(message, f"Привет, {message.from_user.first_name}! Давай поиграем в таблицу умножения!", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == 'Играть')
+def choose_difficulty(message):
+    """Начало игры с выбором уровня сложности"""
+    bot.send_message(message.chat.id, "Выбери уровень сложности:", reply_markup=get_difficulty_keyboard())
+    bot.register_next_step_handler(message, start_game)
+
+def start_game(message):
+    """Запуск игры после выбора сложности"""
+    difficulty_levels = {'Легкий': 1, 'Средний': 2, 'Сложный': 3}
+    if message.text in difficulty_levels:
+        user_data[message.chat.id]['difficulty'] = difficulty_levels[message.text]
+        play_game(message)
+    else:
+        bot.send_message(message.chat.id, "Пожалуйста, выбери один из предложенных уровней сложности.")
+        choose_difficulty(message)
+
 def play_game(message):
-    question, correct_answer, options = generate_question()
+    """Генерация и отправка нового вопроса пользователю"""
+    difficulty = user_data[message.chat.id]['difficulty']
+    question, correct_answer, options = generate_question(difficulty)
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     markup.add(*[types.KeyboardButton(str(option)) for option in options])
     bot.send_message(message.chat.id, f"Сколько будет {question}?", reply_markup=markup)
     bot.register_next_step_handler(message, check_answer, correct_answer)
 
 def check_answer(message, correct_answer):
+    """Проверка ответа пользователя"""
     user = user_data[message.chat.id]
-    if message.text == str(correct_answer):
-        user['current_streak'] += 1
-        user['score'] = max(user['score'], user['current_streak'])
-        user['max_score'] = max(user['max_score'], user['current_streak'])
-        
-        sticker = random.choice(praise_stickers)
-        bot.send_sticker(message.chat.id, sticker)
-        bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}")
-    else:
-        bot.send_message(message.chat.id, f"Не совсем верно, но ты молодец, что стараешься! Правильный ответ: {correct_answer}.")
-        user['current_streak'] = 0
+    try:
+        if int(message.text) == correct_answer:
+            user['current_streak'] += 1
+            user['score'] = max(user['score'], user['current_streak'])
+            user['max_score'] = max(user['max_score'], user['current_streak'])
+            
+            sticker = random.choice(praise_stickers)
+            bot.send_sticker(message.chat.id, sticker)
+            bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}")
+        else:
+            bot.send_message(message.chat.id, f"Не совсем верно, но ты молодец, что стараешься! Правильный ответ: {correct_answer}.")
+            user['current_streak'] = 0
+    except ValueError:
+        bot.send_message(message.chat.id, "Пожалуйста, выбери один из предложенных вариантов ответа.")
     
     play_game(message)
 
 @bot.message_handler(func=lambda message: message.text == 'Статистика')
 def show_stats(message):
+    """Показ статистики пользователя"""
     user = user_data.get(message.chat.id, {"score": 0, "max_score": 0})
     bot.send_message(message.chat.id, f"Твоя статистика:\nТекущий счет: {user['score']}\nРекорд: {user['max_score']}", reply_markup=get_main_keyboard())
 
