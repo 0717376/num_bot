@@ -27,14 +27,14 @@ praise_stickers = [
     'CAACAgIAAxkBAAEIC1JmzrbP3lb6jnPAI5QeO6YP53tayQACEQADobYRCIFNsq5T0aHMNQQ'
 ]
 
-def generate_question(difficulty=1):
-    """Генерация вопроса и вариантов ответов на основе сложности"""
-    a = random.randint(2, 9 * difficulty)
-    b = random.randint(2, 9 * difficulty)
+def generate_question():
+    """Генерация вопроса и вариантов ответов на основе таблицы умножения от 1 до 9"""
+    a = random.randint(1, 9)
+    b = random.randint(1, 9)
     correct_answer = a * b
     options = [correct_answer]
     while len(options) < 4:
-        wrong_answer = random.randint(max(2, correct_answer - 10), correct_answer + 10)
+        wrong_answer = random.randint(1, 81)
         if wrong_answer != correct_answer and wrong_answer not in options:
             options.append(wrong_answer)
     random.shuffle(options)
@@ -47,9 +47,16 @@ def get_main_keyboard():
     keyboard.add(types.KeyboardButton('Сбросить статистику'))
     return keyboard
 
+def get_game_keyboard(options):
+    """Создание клавиатуры для выбора ответа с добавлением кнопки 'Главное меню'"""
+    keyboard = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    keyboard.add(*[types.KeyboardButton(str(option)) for option in options])
+    keyboard.add(types.KeyboardButton('/start'))
+    return keyboard
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    """Приветствие нового пользователя"""
+    """Приветствие нового пользователя и отображение главного меню"""
     user_data[message.chat.id] = {
         "score": 0,
         "max_score": 0,
@@ -61,15 +68,13 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: message.text == 'Играть')
 def play_game(message):
     """Начало игры"""
-    difficulty = user_data[message.chat.id]['difficulty']
-    question, correct_answer, options = generate_question(difficulty)
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(*[types.KeyboardButton(str(option)) for option in options])
+    question, correct_answer, options = generate_question()
+    markup = get_game_keyboard(options)
     bot.send_message(message.chat.id, f"Сколько будет {question}?", reply_markup=markup)
     bot.register_next_step_handler(message, check_answer, correct_answer)
 
 def check_answer(message, correct_answer):
-    """Проверка ответа пользователя и увеличение сложности при правильных ответах"""
+    """Проверка ответа пользователя и обновление статистики"""
     user = user_data[message.chat.id]
     try:
         if int(message.text) == correct_answer:
@@ -77,17 +82,12 @@ def check_answer(message, correct_answer):
             user['score'] = max(user['score'], user['current_streak'])
             user['max_score'] = max(user['max_score'], user['current_streak'])
             
-            # Увеличение сложности каждые 3 правильных ответа подряд
-            if user['current_streak'] % 3 == 0:
-                user['difficulty'] += 1
-            
             sticker = random.choice(praise_stickers)
             bot.send_sticker(message.chat.id, sticker)
-            bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}\nТекущий уровень сложности: {user['difficulty']}")
+            bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}")
         else:
             bot.send_message(message.chat.id, f"Не совсем верно, но ты молодец, что стараешься! Правильный ответ: {correct_answer}.")
             user['current_streak'] = 0
-            user['difficulty'] = 1  # Сброс сложности при ошибке
     except ValueError:
         bot.send_message(message.chat.id, "Пожалуйста, выбери один из предложенных вариантов ответа.")
     
@@ -96,8 +96,8 @@ def check_answer(message, correct_answer):
 @bot.message_handler(func=lambda message: message.text == 'Статистика')
 def show_stats(message):
     """Показ статистики пользователя"""
-    user = user_data.get(message.chat.id, {"score": 0, "max_score": 0, "difficulty": 1})
-    bot.send_message(message.chat.id, f"Твоя статистика:\nТекущий счет: {user['score']}\nРекорд: {user['max_score']}\nТекущий уровень сложности: {user['difficulty']}", reply_markup=get_main_keyboard())
+    user = user_data.get(message.chat.id, {"score": 0, "max_score": 0})
+    bot.send_message(message.chat.id, f"Твоя статистика:\nТекущий счет: {user['score']}\nРекорд: {user['max_score']}", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == 'Сбросить статистику')
 def reset_stats(message):
