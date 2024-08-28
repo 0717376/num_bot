@@ -27,10 +27,14 @@ praise_stickers = [
     'CAACAgIAAxkBAAEIC1JmzrbP3lb6jnPAI5QeO6YP53tayQACEQADobYRCIFNsq5T0aHMNQQ'
 ]
 
-def generate_question():
-    """Генерация вопроса и вариантов ответов на основе таблицы умножения от 1 до 9"""
-    a = random.randint(1, 9)
-    b = random.randint(1, 9)
+def generate_question(last_question=None):
+    """Генерация вопроса и вариантов ответов, исключая последний вопрос"""
+    while True:
+        a = random.randint(1, 9)
+        b = random.randint(1, 9)
+        question = f"{a} × {b}"
+        if question != last_question:
+            break
     correct_answer = a * b
     options = [correct_answer]
     while len(options) < 4:
@@ -38,7 +42,7 @@ def generate_question():
         if wrong_answer != correct_answer and wrong_answer not in options:
             options.append(wrong_answer)
     random.shuffle(options)
-    return f"{a} × {b}", correct_answer, options
+    return question, correct_answer, options
 
 def get_main_keyboard():
     """Создание основной клавиатуры"""
@@ -61,17 +65,25 @@ def send_welcome(message):
         "score": 0,
         "max_score": 0,
         "current_streak": 0,
-        "difficulty": 1
+        "difficulty": 1,
+        "last_question": None,
+        "last_sticker": None,
+        "last_message_ids": []
     }
     bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}! Давай поиграем в таблицу умножения!", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == 'Играть')
 def play_game(message):
     """Начало игры"""
-    question, correct_answer, options = generate_question()
+    user = user_data[message.chat.id]
+    question, correct_answer, options = generate_question(user['last_question'])
+    user['last_question'] = question
+    
     markup = get_game_keyboard(options)
-    bot.send_message(message.chat.id, f"Сколько будет {question}?", reply_markup=markup)
-    bot.register_next_step_handler(message, check_answer, correct_answer)
+    sent_message = bot.send_message(message.chat.id, f"Сколько будет {question}?", reply_markup=markup)
+    
+    user['last_message_ids'].append(sent_message.message_id)
+    bot.register_next_step_handler(sent_message, check_answer, correct_answer)
 
 def check_answer(message, correct_answer):
     """Проверка ответа пользователя и обновление статистики"""
@@ -86,14 +98,23 @@ def check_answer(message, correct_answer):
             user['score'] = max(user['score'], user['current_streak'])
             user['max_score'] = max(user['max_score'], user['current_streak'])
             
-            sticker = random.choice(praise_stickers)
+            # Выбор нового стикера, который не совпадает с предыдущим
+            while True:
+                sticker = random.choice(praise_stickers)
+                if sticker != user['last_sticker']:
+                    break
+            user['last_sticker'] = sticker
+            
             bot.send_sticker(message.chat.id, sticker)
-            bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}")
+            sent_message = bot.send_message(message.chat.id, f"Правильно! Молодец, {message.from_user.first_name}! 🎉\nТвой текущий счет: {user['current_streak']}\nТвой рекорд: {user['max_score']}")
         else:
-            bot.send_message(message.chat.id, f"Не совсем верно, но ты молодец, что стараешься! Правильный ответ: {correct_answer}.")
+            sent_message = bot.send_message(message.chat.id, f"Не совсем верно, но ты молодец, что стараешься! Правильный ответ: {correct_answer}.")
             user['current_streak'] = 0
+        
+        user['last_message_ids'].append(sent_message.message_id)
     except ValueError:
-        bot.send_message(message.chat.id, "Пожалуйста, выбери один из предложенных вариантов ответа.")
+        sent_message = bot.send_message(message.chat.id, "Пожалуйста, выбери один из предложенных вариантов ответа.")
+        user['last_message_ids'].append(sent_message.message_id)
     
     play_game(message)
 
@@ -105,13 +126,27 @@ def show_stats(message):
 
 @bot.message_handler(func=lambda message: message.text == 'Сбросить статистику')
 def reset_stats(message):
-    """Сброс статистики пользователя"""
+    """Сброс статистики пользователя и удаление сообщений"""
+    user = user_data[message.chat.id]
+    
+    # Удаление последних сообщений пользователя и бота
+    for message_id in user['last_message_ids']:
+        try:
+            bot.delete_message(message.chat.id, message_id)
+        except Exception as e:
+            pass  # Игнорируем ошибки, связанные с удалением сообщений
+    
+    # Сброс статистики
     user_data[message.chat.id] = {
         "score": 0,
         "max_score": 0,
         "current_streak": 0,
-        "difficulty": 1
+        "difficulty": 1,
+        "last_question": None,
+        "last_sticker": None,
+        "last_message_ids": []
     }
+    
     bot.send_message(message.chat.id, "Твоя статистика была сброшена.", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == 'Главное меню')
